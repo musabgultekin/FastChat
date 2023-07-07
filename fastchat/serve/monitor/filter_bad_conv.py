@@ -19,21 +19,28 @@ class TypeCode(Enum):
     REDACTED = auto()
     BAD_FORMAT = auto()
     BLOCKED_WORDS = auto()
+    TOO_SHORT = auto()
 
 
 def detect_type(conv):
     for key in ["conversation_a", "conversation_b"]:
-        for row in conv[key]:
-            msg = row["content"]
-            if msg is None:
+        messages = [row["content"] for row in conv[key]]
+        for msg in messages:
+            if not isinstance(msg, str):
                 return TypeCode.BAD_FORMAT
 
+        user_prompt_lens = [len(row["content"]) for row in conv[key]
+            if row["role"] == "user"]
+        if len(messages) <= 2 and max(user_prompt_lens) < 16:
+            return TypeCode.TOO_SHORT
+
+        for msg in messages:
             msg = msg.lower()
             if "<anonymized>" in msg:
                 return TypeCode.ANONYMIZED
             if "<redacted>" in msg:
                 return TypeCode.REDACTED
-            
+
             for w in blocked_words:
                 if w in msg:
                     return TypeCode.BLOCKED_WORDS
@@ -60,6 +67,7 @@ if __name__ == "__main__":
     ct_lang_filter = 0
     ct_flagged = 0
     ct_blocked_words = 0
+    ct_too_short = 0
 
     new_convs = []
     for conv in convs:
@@ -78,6 +86,10 @@ if __name__ == "__main__":
         elif type_code == TypeCode.BLOCKED_WORDS:
             ct_blocked_words += 1
             continue
+        elif type_code == TypeCode.TOO_SHORT:
+            ct_too_short += 1
+            continue
+
         if conv["openai_moderation"]["flagged"]:
             ct_flagged += 1
             continue
@@ -92,7 +104,7 @@ if __name__ == "__main__":
 
     print(f"ct_anonymized: {ct_anonymized}, ct_redacted: {ct_redacted}")
     print(f"ct_bad_format: {ct_bad_format}, ct_flagged: {ct_flagged}")
-    print(f"ct_blocked_words: {ct_blocked_words}")
+    print(f"ct_blocked_words: {ct_blocked_words}, ct_too_short: {ct_too_short}")
     print(f"new_conv: {len(new_convs)}")
 
     out_file = args.in_file.replace(".json", ".out.json")
